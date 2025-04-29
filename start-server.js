@@ -5,6 +5,6 @@
  */
 
 // Import the compiled index.js file
-import './dist/index.js';
+import './dist/src/index.js';
 
 console.log('Starting GemForge-mcp server from compiled JavaScript files...');

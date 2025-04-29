@@ -10,13 +10,12 @@ COPY pnpm-lock.yaml ./
 
 # Install pnpm and dependencies
 RUN npm install -g pnpm@latest
-RUN pnpm install
 
-# Copy application code
+# Copy application code first to ensure TypeScript can find the files
 COPY . .
 
-# Build the application
-RUN pnpm run build
+# Install dependencies and build the application
+RUN pnpm install && pnpm run build
 
 # Set environment variables with defaults
 ENV NODE_ENV=production
@@ -26,4 +25,4 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 # Run the server using stdio transport
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/src/index.js"]

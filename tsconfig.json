@@ -3,7 +3,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "target": "ES2020",
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "./dist",
     "allowJs": true,
     "allowSyntheticDefaultImports": true,
@@ -16,6 +16,6 @@
     "allowImportingTsExtensions": false,
     "noEmit": false
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "src/*.ts"],
   "exclude": ["node_modules", "dist", "test"]
 }
