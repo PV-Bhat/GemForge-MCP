@@ -1,0 +1,42 @@
+{
+  "name": "gemini-tools-gemforge",
+  "version": "1.0.0",
+  "description": "Professional Gemini API integration for Claude and MCP-compatible hosts with intelligent model selection and advanced file handling",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/index.ts",
+    "start:dist": "node dist/index.js",
+    "start:compiled": "node start-server.js",
+    "test": "tsx test/test-gemini-tools.ts",
+    "dev": "tsc -w",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "gemini",
+    "mcp",
+    "ai",
+    "claude",
+    "google-ai",
+    "model-context-protocol"
+  ],
+  "author": "PV-Bhat",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.0",
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "axios": "^1.8.4",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.3",
+    "ts-node": "^10.9.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.3.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PV-Bhat/gemini-tools-gemforge.git"
+  }
+}

@@ -1,0 +1,214 @@
+import axios from 'axios';
+import path from 'path';
+import { preparePartsWithFiles } from '../utils/file-handler.js';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import { MODELS, TaskType, getModelForTask } from '../config/models.js';
+import { API, TOOL_NAMES } from '../config/constants.js';
+import { rateLimitManager } from '../utils/rate-limiter.js';
+import { formatErrorResponse } from '../utils/error-handler.js';
+import { formatResponse } from '../utils/response-formatter.js';
+/**
+ * Handles file analysis requests
+ * @param request The MCP request
+ * @returns The MCP response
+ */
+export async function handleAnalyzeFile(request) {
+    try {
+        // Validate required parameters
+        if (!request.params.arguments || typeof request.params.arguments.file_path !== 'string') {
+            throw new McpError(ErrorCode.InvalidParams, 'File path parameter is required and must be a string');
+        }
+        // Extract and parse arguments
+        const args = {
+            file_path: request.params.arguments.file_path,
+            query: request.params.arguments.query || 'Analyze this file and describe its contents.',
+            modelId: request.params.arguments.modelId
+        };
+        // Select appropriate model or use provided model
+        const modelId = args.modelId || getModelForTask(TaskType.FILE_ANALYSIS);
+        // Get model configuration
+        const model = MODELS[modelId];
+        if (!model) {
+            throw new McpError(ErrorCode.InvalidParams, `Unknown model: ${modelId}`);
+        }
+        // Check if model supports multimodal input
+        if (!model.capabilities.multimodal) {
+            throw new McpError(ErrorCode.InvalidParams, `The model ${model.displayName} does not support multimodal inputs`);
+        }
+        // Read and process the file
+        try {
+            // Validate required parameters before calling preparePartsWithFiles
+            if (!args.file_path) {
+                throw new McpError(ErrorCode.InvalidParams, "Missing required parameter: file_path");
+            }
+            const queryText = args.query ?? ''; // Use empty string if query is undefined
+            console.error(`Preparing parts for single file analysis. File: ${args.file_path}, Query: '${queryText}'`);
+            // Use the improved file handling functions
+            const parts = await preparePartsWithFiles(args.file_path, queryText);
+            // Prepare the request body
+            const requestBody = {
+                contents: [{
+                        role: 'user',
+                        parts: parts
+                    }]
+            };
+            // Execute the API call with retry logic
+            const endpoint = `${API.ENDPOINT}/${modelId}:generateContent?key=${API.API_KEY}`;
+            const response = await rateLimitManager.executeWithRetry(modelId, async () => {
+                const response = await axios.post(endpoint, requestBody);
+                return response.data;
+            });
+            // Format the response
+            const responseOptions = {
+                includeThinking: false,
+                includeSearch: false,
+                customFormat: {
+                    operation: TOOL_NAMES.ANALYZE_FILE,
+                    fileName: path.basename(args.file_path)
+                }
+            };
+            return formatResponse(response, modelId, responseOptions);
+        }
+        catch (error) {
+            if (error instanceof Error) {
+                throw new McpError(ErrorCode.InternalError, `Error reading file: ${error.message}`);
+            }
+            throw error;
+        }
+    }
+    catch (error) {
+        console.error('Error in analyze file handler:', error);
+        if (error instanceof McpError) {
+            throw error;
+        }
+        return formatErrorResponse(error);
+    }
+}
+/**
+ * Handles multiple file analysis requests
+ * @param request The MCP request
+ * @returns The MCP response
+ */
+export async function handleAnalyzeFiles(request) {
+    try {
+        // Validate required parameters
+        if (!request.params.arguments || !Array.isArray(request.params.arguments.file_paths)) {
+            throw new McpError(ErrorCode.InvalidParams, 'file_paths parameter is required and must be an array of strings');
+        }
+        // Extract and parse arguments
+        const args = {
+            file_paths: request.params.arguments.file_paths,
+            query: request.params.arguments.query || 'Analyze these files and describe their contents.',
+            modelId: request.params.arguments.modelId
+        };
+        // Select appropriate model or use provided model
+        const modelId = args.modelId || getModelForTask(TaskType.FILE_ANALYSIS);
+        // Get model configuration
+        const model = MODELS[modelId];
+        if (!model) {
+            throw new McpError(ErrorCode.InvalidParams, `Unknown model: ${modelId}`);
+        }
+        // Check if model supports multimodal input
+        if (!model.capabilities.multimodal) {
+            throw new McpError(ErrorCode.InvalidParams, `The model ${model.displayName} does not support multimodal inputs`);
+        }
+        try {
+            // Validate required parameters before calling preparePartsWithFiles
+            if (!args.file_paths || args.file_paths.length === 0) {
+                throw new McpError(ErrorCode.InvalidParams, "Missing required parameter: file_paths");
+            }
+            const queryText = args.query ?? ''; // Use empty string if query is undefined
+            console.error(`Preparing parts for multi-file analysis. Files: ${args.file_paths.join(', ')}, Query: '${queryText}'`);
+            // Use improved file handling for multiple files
+            const parts = await preparePartsWithFiles(args.file_paths, queryText);
+            // Prepare the request body
+            const requestBody = {
+                contents: [{
+                        role: 'user',
+                        parts: parts
+                    }]
+            };
+            // Execute the API call with retry logic
+            const endpoint = `${API.ENDPOINT}/${modelId}:generateContent?key=${API.API_KEY}`;
+            const response = await rateLimitManager.executeWithRetry(modelId, async () => {
+                const response = await axios.post(endpoint, requestBody);
+                return response.data;
+            });
+            // Format the response
+            const responseOptions = {
+                includeThinking: false,
+                includeSearch: false,
+                customFormat: {
+                    operation: 'analyze_files',
+                    fileCount: args.file_paths.length,
+                    fileNames: args.file_paths.map(filePath => path.basename(filePath))
+                }
+            };
+            return formatResponse(response, modelId, responseOptions);
+        }
+        catch (error) {
+            if (error instanceof Error) {
+                throw new McpError(ErrorCode.InternalError, `Error processing files: ${error.message}`);
+            }
+            throw error;
+        }
+    }
+    catch (error) {
+        console.error('Error in analyze files handler:', error);
+        if (error instanceof McpError) {
+            throw error;
+        }
+        return formatErrorResponse(error);
+    }
+}
+/**
+ * Gets the MIME type for a file based on its extension
+ * @param filePath Path to the file
+ * @returns MIME type string
+ */
+function getMimeType(filePath) {
+    const extension = path.extname(filePath).toLowerCase();
+    switch (extension) {
+        case '.jpg':
+        case '.jpeg':
+            return 'image/jpeg';
+        case '.png':
+            return 'image/png';
+        case '.gif':
+            return 'image/gif';
+        case '.webp':
+            return 'image/webp';
+        case '.pdf':
+            return 'application/pdf';
+        case '.md':
+            return 'text/markdown';
+        case '.txt':
+            return 'text/plain';
+        default:
+            return 'application/octet-stream';
+    }
+}
+/**
+ * Determines file type from file path
+ * Used for model selection
+ */
+function getFileType(filePath) {
+    const extension = path.extname(filePath).toLowerCase();
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(extension)) {
+        return 'image';
+    }
+    else if (extension === '.pdf') {
+        return 'pdf';
+    }
+    else {
+        return 'text';
+    }
+}
+/**
+ * Selects the appropriate model for file type
+ */
+function selectModelForFileType(fileType) {
+    // For now, we just use the general file analysis model
+    return getModelForTask(TaskType.FILE_ANALYSIS);
+}
+//# sourceMappingURL=file-analysis.js.map

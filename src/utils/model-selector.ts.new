@@ -1,0 +1,243 @@
+/**
+ * Model selection utilities for Gemini API
+ */
+import { getFileTypeCategory } from './file-handler.js';
+import { TaskType, GeminiRequest } from '../interfaces/common.js';
+import { MODEL_IDS } from '../config/constants.js';
+import path from 'path';
+
+// Legacy model IDs for backward compatibility
+// These should match the verified available models
+export const MODELS = {
+  FLASH: 'gemini-2.0-flash-001',
+  FLASH_LITE: 'gemini-2.0-flash-lite-001',
+  FLASH_THINKING: 'gemini-1.5-pro'  // Using gemini-1.5-pro as fallback for thinking capabilities
+};
+
+// Re-export TaskType for convenience
+export { TaskType };
+
+/**
+ * Get the recommended model ID based on file type
+ * @param {string} filePath - Path to the file
+ * @returns {string} - Recommended model ID
+ */
+export function getModelForFile(filePath: string): string {
+  if (!filePath) return MODELS.FLASH;
+
+  const category = getFileTypeCategory(filePath);
+  const extension = path.extname(filePath).toLowerCase();
+
+  switch (category) {
+    case 'image':
+      return MODELS.FLASH; // Images require Flash for proper multimodal capabilities
+
+    case 'document':
+      return MODELS.FLASH; // Documents work best with Flash
+
+    case 'code':
+      return MODELS.FLASH_THINKING; // Code analysis benefits from thinking capabilities
+
+    case 'text':
+      // For most text files, Flash-Lite is efficient
+      // But for structured data, use standard Flash
+      if (['.csv', '.json', '.xml'].includes(extension)) {
+        return MODELS.FLASH;
+      }
+      return MODELS.FLASH_LITE;
+
+    default:
+      return MODELS.FLASH;
+  }
+}
+
+/**
+ * Get the recommended model ID based on task type
+ * @param {TaskType} taskType - Type of task
+ * @returns {string} - Recommended model ID
+ */
+export function getModelForTask(taskType: TaskType): string {
+  switch (taskType) {
+    case TaskType.GENERAL_SEARCH:
+      return MODELS.FLASH; // Search requires Flash
+
+    case TaskType.COMPLEX_REASONING:
+      return MODELS.FLASH_THINKING; // Reasoning benefits from thinking capabilities
+
+    case TaskType.RAPID_PROCESSING:
+      return MODELS.FLASH_LITE; // Processing is efficient with Flash-Lite
+
+    case TaskType.FILE_ANALYSIS:
+      return MODELS.FLASH; // Analysis often needs Flash capabilities
+
+    default:
+      return MODELS.FLASH;
+  }
+}
+
+/**
+ * Interface for model selection options
+ */
+interface ModelSelectionOptions {
+  /** User-specified model ID */
+  modelId?: string;
+  /** Type of task */
+  taskType?: TaskType;
+  /** File path or array of file paths */
+  filePath?: string | string[];
+  /** Whether thinking mode is required */
+  thinking?: boolean;
+  /** Whether search integration is required */
+  searchRequired?: boolean;
+  /** Whether cost efficiency is a priority */
+  costEfficient?: boolean;
+}
+
+/**
+ * Select the most appropriate model based on task, file, and user preference
+ * @param {ModelSelectionOptions} options - Selection options
+ * @returns {string} - Selected model ID
+ */
+export function selectModel(options: ModelSelectionOptions): string {
+  // User-specified model has highest priority
+  if (options.modelId) return options.modelId;
+
+  // If thinking is required, use Flash Thinking
+  if (options.thinking) return MODELS.FLASH_THINKING;
+
+  // If search is required, use Flash
+  if (options.searchRequired) return MODELS.FLASH;
+
+  // If cost efficiency is a priority, use Flash-Lite
+  if (options.costEfficient) return MODELS.FLASH_LITE;
+
+  // If files are provided, select based on file type
+  if (options.filePath) {
+    // For multiple files, use the most capable model required by any file
+    if (Array.isArray(options.filePath)) {
+      let needsFlash = false;
+      let needsThinking = false;
+
+      for (const file of options.filePath) {
+        const category = getFileTypeCategory(file);
+        if (category === 'image' || category === 'document') needsFlash = true;
+        if (category === 'code') needsThinking = true;
+      }
+
+      if (needsThinking) return MODELS.FLASH_THINKING;
+      if (needsFlash) return MODELS.FLASH;
+      return MODELS.FLASH_LITE;
+    } else {
+      return getModelForFile(options.filePath);
+    }
+  }
+
+  // If task type is provided, select based on task
+  if (options.taskType) {
+    return getModelForTask(options.taskType);
+  }
+
+  // Default to Flash
+  return MODELS.FLASH;
+}
+
+/**
+ * Map of preview models to their fallback models when not available
+ * Updated with models confirmed to be available
+ */
+const MODEL_FALLBACKS: Record<string, string> = {
+  // 2.5 models fall back to appropriate 2.0 or 1.5 models
+  'gemini-2.5-pro-preview-03-25': 'gemini-1.5-pro',
+  'gemini-2.5-flash-preview-04-17': 'gemini-2.0-flash-001',
+  'gemini-2.5-pro': 'gemini-1.5-pro',
+  'gemini-2.5-flash': 'gemini-2.0-flash-001',
+  
+  // 2.0 models with proper versions
+  'gemini-2.0-pro': 'gemini-1.5-pro',
+  'gemini-2.0-flash': 'gemini-2.0-flash-001',
+  'gemini-2.0-flash-lite': 'gemini-2.0-flash-lite-001',
+  
+  // Experimental models
+  'gemini-2.0-flash-thinking-exp-01-21': 'gemini-1.5-pro',
+};
+
+/**
+ * Check if a model is available and return fallback if needed
+ * @param modelId - Requested model ID
+ * @returns Usable model ID (original or fallback)
+ */
+function getUsableModelId(modelId: string): string {
+  // First check direct matches in our fallback map
+  if (MODEL_FALLBACKS[modelId]) {
+    const fallback = MODEL_FALLBACKS[modelId];
+    console.error(`Model ${modelId} is not directly available. Using fallback: ${fallback}`);
+    return fallback;
+  }
+  
+  // Check for preview/experimental models
+  if (modelId.includes('preview') || modelId.includes('exp')) {
+    // Try to find an appropriate fallback based on capability level
+    if (modelId.includes('pro')) {
+      console.error(`Unknown preview/experimental pro model ${modelId}. Using fallback: gemini-1.5-pro`);
+      return 'gemini-1.5-pro';
+    } else if (modelId.includes('flash-lite')) {
+      console.error(`Unknown preview/experimental flash-lite model ${modelId}. Using fallback: gemini-2.0-flash-lite-001`);
+      return 'gemini-2.0-flash-lite-001';
+    } else {
+      console.error(`Unknown preview/experimental flash model ${modelId}. Using fallback: gemini-2.0-flash-001`);
+      return 'gemini-2.0-flash-001';
+    }
+  }
+  
+  // For unknown models, provide a safe fallback based on model type
+  if (!modelId.includes('-001') && !modelId.includes('-002')) {
+    if (modelId.includes('1.5-pro')) {
+      return 'gemini-1.5-pro';
+    } else if (modelId.includes('2.0-flash-lite')) {
+      return 'gemini-2.0-flash-lite-001';
+    } else if (modelId.includes('2.0-flash')) {
+      return 'gemini-2.0-flash-001';
+    }
+  }
+
+  // If we don't have a specific fallback, return as is
+  return modelId;
+}
+
+/**
+ * Select the appropriate model ID based on request properties
+ * @param internalRequest - Request object
+ * @returns Selected model ID string
+ */
+export function selectModelId(internalRequest: GeminiRequest): string {
+  // Direct model_id override has highest priority
+  if (internalRequest.model_id && typeof internalRequest.model_id === 'string') {
+    console.error(`Using overridden model ID: ${internalRequest.model_id}`);
+    return getUsableModelId(internalRequest.model_id);
+  }
+
+  // Use capability level mapping
+  const level = internalRequest.capability_level || 'balanced'; // Default to balanced
+  console.error(`Selecting model based on capability level: ${level}`);
+
+  // Map capability level to model ID
+  let selectedModel: string;
+  switch (level) {
+    case 'fast':
+      selectedModel = MODEL_IDS.FAST;
+      break;
+    case 'advanced':
+      selectedModel = MODEL_IDS.ADVANCED;
+      break;
+    case 'large_context':
+      selectedModel = MODEL_IDS.LARGE_CONTEXT; // User must explicitly choose this
+      break;
+    case 'balanced':
+    default:
+      selectedModel = MODEL_IDS.BALANCED;
+      break;
+  }
+
+  // Check if the selected model needs fallback
+  return getUsableModelId(selectedModel);
+}

@@ -1,0 +1,6 @@
+
+> gemini-tools-gemforge@1.0.0 start
+> node build/index.js
+
+[api-executor] Using API key: AIzaS...3kf2s
+Gemini Tools (GemForge) MCP server running on stdio

@@ -1,0 +1,308 @@
+/**
+ * SDK Mapper utilities for Gemini API
+ *
+ * This file provides utility functions for mapping between our internal request/response
+ * formats and the Google Generative AI SDK formats.
+ */
+import {
+  GenerateContentRequest,
+  GenerationConfig as SdkGenerationConfig,
+  SafetySetting,
+  Part,
+  GoogleGenerativeAI
+} from '@google/generative-ai';
+import { GenerationConfig, GeminiRequest, GeminiResponse } from '../interfaces/common.js';
+import { getMimeType, readFileAsBase64, isUrl, fileExists } from './file-handler.js';
+
+/**
+ * Transform internal request format to SDK format
+ * @param internalRequest - Request in internal format
+ * @returns Promise resolving to SDK request format
+ */
+export async function transformToSdkFormat(internalRequest: GeminiRequest): Promise<GenerateContentRequest> {
+  // Prepare parts array for multimodal content
+  const parts: Part[] = [];
+
+  // Extract text prompt
+  let promptText = "";
+
+  try {
+    // Try to extract text from various possible formats
+    if (typeof internalRequest.prompt === 'string') {
+      promptText = internalRequest.prompt;
+    } else if (internalRequest.prompt && typeof internalRequest.prompt.text === 'string') {
+      promptText = internalRequest.prompt.text;
+    } else if (internalRequest.contents && Array.isArray(internalRequest.contents)) {
+      // Try to extract from contents array
+      const firstContent = internalRequest.contents[0];
+      if (firstContent && firstContent.parts && Array.isArray(firstContent.parts)) {
+        const firstPart = firstContent.parts[0];
+        if (firstPart && typeof firstPart.text === 'string') {
+          promptText = firstPart.text;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error extracting prompt from request:", error);
+  }
+
+  // Add text part if non-empty
+  if (promptText && promptText.trim()) {
+    parts.push({ text: promptText });
+  }
+
+  // Process file context if present
+  if (internalRequest.file_context) {
+    const fileContexts = Array.isArray(internalRequest.file_context)
+      ? internalRequest.file_context
+      : [internalRequest.file_context];
+
+    // Process each file/URL
+    for (const fileContext of fileContexts) {
+      try {
+        if (isUrl(fileContext)) {
+          // URL handling (HTTP/HTTPS or GCS)
+          console.error(`Processing URL: ${fileContext}`);
+          // Note: SDK doesn't currently support direct URLs - this is a placeholder for future functionality
+          const mimeType = getMimeType(fileContext) || 'application/octet-stream';
+          // For now, we can only include a text reference to the URL
+          parts.push({
+            text: `[URL reference: ${fileContext}]\n\nPlease access and process this URL.`
+          });
+        } else {
+          // Local file handling
+          // First, check if file exists
+          const exists = await fileExists(fileContext);
+          if (!exists) {
+            throw new Error(`File not found: ${fileContext}`);
+          }
+
+          // Get MIME type
+          const mimeType = getMimeType(fileContext);
+          if (!mimeType) {
+            console.warn(`Could not determine MIME type for file: ${fileContext}. Using application/octet-stream.`);
+          }
+
+          console.error(`Processing local file with base64 encoding: ${fileContext}`);
+          const base64Data = await readFileAsBase64(fileContext);
+          parts.push({
+            inlineData: {
+              mimeType: mimeType || 'application/octet-stream',
+              data: base64Data
+            }
+          });
+        }
+      } catch (error) {
+        console.error(`Error processing file context "${fileContext}":`, error);
+        // Add an error indicator part
+        parts.push({ text: `[Error processing file: ${fileContext}]` });
+      }
+    }
+  }
+
+  // Ensure parts are not empty
+  if (parts.length === 0) {
+    console.warn("No valid text prompt or file context provided. Adding empty text part.");
+    parts.push({ text: " " });
+  }
+
+  // Create the base SDK request with all parts
+  const sdkRequest: GenerateContentRequest = {
+    contents: [{ role: "user", parts }]
+  };
+
+  // Build generation config from both direct parameters and nested config
+  try {
+    const generationConfig: SdkGenerationConfig = {};
+
+    // First check direct parameters (higher priority)
+    if (typeof internalRequest.temperature === 'number') {
+      generationConfig.temperature = internalRequest.temperature;
+    }
+
+    if (typeof internalRequest.maxOutputTokens === 'number') {
+      generationConfig.maxOutputTokens = internalRequest.maxOutputTokens;
+    }
+
+    if (typeof internalRequest.topP === 'number') {
+      generationConfig.topP = internalRequest.topP;
+    }
+
+    if (typeof internalRequest.topK === 'number') {
+      generationConfig.topK = internalRequest.topK;
+    }
+
+    // Then check nested generation_config (lower priority, don't override direct parameters)
+    if (internalRequest.generation_config) {
+      // Map from snake_case in our internal format to camelCase in SDK
+      if (typeof internalRequest.generation_config.temperature === 'number' &&
+          typeof generationConfig.temperature !== 'number') {
+        generationConfig.temperature = internalRequest.generation_config.temperature;
+      }
+
+      if (typeof internalRequest.generation_config.top_p === 'number' &&
+          typeof generationConfig.topP !== 'number') {
+        generationConfig.topP = internalRequest.generation_config.top_p;
+      }
+
+      if (typeof internalRequest.generation_config.top_k === 'number' &&
+          typeof generationConfig.topK !== 'number') {
+        generationConfig.topK = internalRequest.generation_config.top_k;
+      }
+
+      if (typeof internalRequest.generation_config.max_output_tokens === 'number' &&
+          typeof generationConfig.maxOutputTokens !== 'number') {
+        generationConfig.maxOutputTokens = internalRequest.generation_config.max_output_tokens;
+      }
+    }
+
+    // Only add generation config if we have at least one property
+    if (Object.keys(generationConfig).length > 0) {
+      sdkRequest.generationConfig = generationConfig;
+    }
+
+    // Add safety settings if present
+    if (internalRequest.safetySettings && Array.isArray(internalRequest.safetySettings)) {
+      sdkRequest.safetySettings = internalRequest.safetySettings;
+    }
+
+    // Add Search Tool conditionally for gemini_search tool
+    if (internalRequest.toolName === 'gemini_search') {
+      console.error("Enabling Google Search grounding for gemini_search tool.");
+      // For newer models like Gemini 2.5 Flash Preview, we need to use a specific format
+      if (internalRequest.model_id && internalRequest.model_id.includes('2.5-flash-preview')) {
+        // Format for Gemini 2.5 Flash Preview
+        (sdkRequest as any).tools = [
+          {
+            googleSearchRetrieval: {}
+          }
+        ];
+      } else if (internalRequest.model_id && internalRequest.model_id.includes('2.0-flash')) {
+        // Format for Gemini 2.0 Flash
+        (sdkRequest as any).tools = [
+          {
+            googleSearchRetrieval: {}
+          }
+        ];
+      } else {
+        // For other models, don't add tools as they might not support it
+        console.error(`Not adding search tools for model: ${internalRequest.model_id || 'unknown'}`);
+      }
+    }
+  } catch (error) {
+    console.error("Error building generation config or safety settings:", error);
+  }
+
+  return sdkRequest;
+}
+
+/**
+ * Transform SDK response to internal response format
+ * @param sdkResponse - Response from SDK
+ * @returns Response in internal format
+ */
+export function transformFromSdkResponse(sdkResponse: any): GeminiResponse {
+  try {
+    // Try to extract text using the text() method
+    let responseText = "";
+    let groundingMetadata: any | undefined = undefined;
+
+    // Extract text
+    if (sdkResponse && typeof sdkResponse.text === 'function') {
+      try {
+        responseText = sdkResponse.text() || "";
+        // Check if the response contains invalid JSON characters
+        if (responseText.includes('Selecting') && responseText.includes('"...')) {
+          console.warn('Detected potentially malformed JSON in response');
+          // Clean up the response by escaping problematic characters
+          responseText = responseText.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+        }
+      } catch (textError) {
+        console.error('Error extracting text from response:', textError);
+        responseText = `[Error extracting text: ${textError instanceof Error ? textError.message : 'Unknown error'}]`;
+      }
+    } else {
+      // Fallback for unexpected response format
+      responseText = "[Unable to extract text from response]";
+    }
+
+    // Extract grounding metadata if available
+    try {
+      if (sdkResponse.promptFeedback?.blockReason) {
+        // Handle cases where the response was blocked
+        console.warn("Response possibly blocked:", sdkResponse.promptFeedback.blockReason);
+      } else if (sdkResponse.candidates && sdkResponse.candidates.length > 0) {
+        const candidate = sdkResponse.candidates[0];
+
+        if (candidate.groundingMetadata) {
+          groundingMetadata = candidate.groundingMetadata;
+          console.error("Extracted grounding metadata from response.");
+        } else if (candidate.content?.parts?.[0]?.groundingMetadata) {
+          // Alternative location based on SDK structure
+          groundingMetadata = candidate.content.parts[0].groundingMetadata;
+          console.error("Extracted grounding metadata from content parts.");
+        }
+      }
+    } catch (error) {
+      console.error("Error extracting grounding metadata:", error);
+      // Don't propagate the error, just log it
+      groundingMetadata = null;
+    }
+
+    // Construct the response
+    const internalResponse: GeminiResponse = {
+      candidates: [{
+        content: {
+          parts: [{
+            text: responseText
+          }]
+        }
+      }]
+    };
+
+    // Add grounding metadata if available
+    if (groundingMetadata) {
+      try {
+        internalResponse.groundingMetadata = groundingMetadata;
+
+        // If there's search data in the grounding metadata, add it to the candidates structure too
+        if (groundingMetadata.searchResults || groundingMetadata.webSearchResults) {
+          if (internalResponse.candidates && internalResponse.candidates.length > 0) {
+            // Safely stringify the metadata
+            let renderedContent;
+            try {
+              renderedContent = JSON.stringify(groundingMetadata, null, 2);
+            } catch (e) {
+              console.warn("Could not stringify grounding metadata:", e);
+              renderedContent = "[Complex metadata structure - could not stringify]";
+            }
+
+            internalResponse.candidates[0].grounding_metadata = {
+              search_entry_point: {
+                rendered_content: renderedContent
+              }
+            };
+          }
+        }
+      } catch (error) {
+        console.error("Error adding grounding metadata to response:", error);
+        // Continue without the metadata rather than failing completely
+      }
+    }
+
+    return internalResponse;
+  } catch (error) {
+    console.error("Error in transformFromSdkResponse:", error);
+
+    // Return a minimal valid response object
+    return {
+      candidates: [{
+        content: {
+          parts: [{
+            text: "[Error processing response: " + (error instanceof Error ? error.message : "Unknown error") + "]"
+          }]
+        }
+      }]
+    };
+  }
+}

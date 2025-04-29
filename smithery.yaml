@@ -1,0 +1,31 @@
+# Smithery.ai configuration for GemForge-MCP
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      GEMINI_API_KEY:
+        type: string
+        description: "Google Gemini API key"
+      GEMINI_PAID_TIER:
+        type: boolean
+        description: "Whether using paid tier (for rate limits)"
+        default: false
+      DEFAULT_MODEL_ID:
+        type: string
+        description: "Default Gemini model ID to use"
+        default: "gemini-2.5-flash-preview-04-17"
+    required:
+      - GEMINI_API_KEY
+  commandFunction: |-
+    (config) => ({
+      "command": "node",
+      "args": [
+        "dist/index.js"
+      ],
+      "env": {
+        "GEMINI_API_KEY": config.GEMINI_API_KEY,
+        "GEMINI_PAID_TIER": config.GEMINI_PAID_TIER ? "true" : "false",
+        "DEFAULT_MODEL_ID": config.DEFAULT_MODEL_ID || "gemini-2.5-flash-preview-04-17"
+      }
+    })
