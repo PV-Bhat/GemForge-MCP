@@ -1,6 +1,3 @@
-Here’s your `.md` file, polished for maximum clarity, consistency, and presentation-quality Markdown formatting while preserving all functionality:
-
-```markdown
 # 🌌 GemForge: The Gemini-Claude Connector
 
 [![Smithery Badge](https://smithery.ai/badge/@PV-Bhat/gemforge-gemini-tools-mcp)](https://smithery.ai/server/@PV-Bhat/gemforge-gemini-tools-mcp)
@@ -290,6 +287,3 @@ spec:
   <a href="https://smithery.ai/server/@PV-Bhat/gemforge-gemini-tools-mcp">Smithery</a> • 
   <a href="https://discord.me/mcp">Join the Discord</a>
 </p>
-```
-
-Let me know if you want this adapted into a `README.md` template for a GitHub repo structure or if you'd like me to generate a downloadable file.
