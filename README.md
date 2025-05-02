@@ -2,6 +2,10 @@
 
 GemForge-mcp is a professional Gemini API integration for Claude and MCP-compatible hosts with intelligent model selection and advanced file handling capabilities.
 
+<a href="https://glama.ai/mcp/servers/@PV-Bhat/GemForge-MCP">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@PV-Bhat/GemForge-MCP/badge" alt="GemForge-Gemini-Tools-MCP MCP server" />
+</a>
+
 ## Overview
 
 GemForge-mcp provides a Model Context Protocol (MCP) server that offers specialized tools for interacting with Google's Gemini AI models. It features intelligent model selection based on task type and content, advanced file handling, and optimized prompts for different use cases.
