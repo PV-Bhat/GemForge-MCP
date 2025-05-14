@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/pv-bhat-gemforge-mcp-badge.png)](https://mseep.ai/app/pv-bhat-gemforge-mcp)
+
 # GemForge (Gemini Tools)
 <img src="https://github.com/user-attachments/assets/8cee4293-b0e0-461f-a9d9-f750397aa2b5" alt="GemForgeLogo" width="100" height="100">
 
