@@ -3,8 +3,14 @@
 
 <img src="https://glama.ai/mcp/servers/@PV-Bhat/GemForge-MCP/badge" alt="Glama Badge" width="210" height="110">
 
+## Overview
+
 [![Smithery Badge](https://smithery.ai/badge/@PV-Bhat/gemforge-gemini-tools-mcp)](https://smithery.ai/server/@PV-Bhat/gemforge-gemini-tools-mcp)
 [![MCP.so](https://img.shields.io/badge/MCP-Directory-blue)](https://mcp.so/server/gemforge-gemini-tools-mcp/PV-Bhat)
+<a href="https://glama.ai/mcp/servers/@PV-Bhat/GemForge-MCP">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@PV-Bhat/GemForge-MCP/badge" alt="GemForge-Gemini-Tools-MCP MCP server" />
+</a>
+
 
 **GemForge-Gemini-Tools-MCP**: Enterprise-grade Gemini integration for your favorite MCP agents. Supercharge Claude, Roo Code, and Windsurf with codebase analysis, live search, text/PDF/image processing, and more.
 
@@ -218,5 +224,6 @@ Visit our [Documentation Site](https://your-username.github.io/GemForge) for:
 Licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
+- Google Gemini API for providing the underlying AI capabilities
+- Model Context Protocol (MCP) for standardizing AI tool interfaces
 
-Powered by the [Gemini API](https://cloud.google.com/gemini) and inspired by the [Model Context Protocol](https://modelcontextprotocol.io).
