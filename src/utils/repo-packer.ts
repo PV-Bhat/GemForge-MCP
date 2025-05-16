@@ -4,7 +4,7 @@
  * This file provides utility functions for packing a code repository
  * using the Repomix tool, which creates an XML representation of the codebase.
  */
-import { exec } from 'child_process';
+import { execFile } from 'child_process'; // MODIFIED: Import execFile
 import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
@@ -12,7 +12,7 @@ import os from 'os';
 /** Configuration options for packing a repository */
 export interface RepoPackOptions {
   outputPath?: string;
-  compress?: boolean; // Note: Repomix might have different flags now, adjust command if needed
+  compress?: boolean;
   includePatterns?: string;
   excludePatterns?: string;
   keepTemp?: boolean;
@@ -23,7 +23,6 @@ export interface RepoPackOptions {
 export interface RepoPackResult {
   outputPath: string;
   error?: string;
-  // Add metrics parsing if needed, based on repomix stdout
 }
 
 /** Pack a local directory using repomix */
@@ -46,16 +45,15 @@ export async function packDirectory(
     }
 
     // Create a temporary output path if not specified
-    // Simple temp name example:
     const tempFileName = `repomix-${Date.now()}.xml`;
     const outputPath = options.outputPath || path.join(os.tmpdir(), tempFileName);
 
-    // Build the repomix command (adjust flags as needed for current repomix version)
-    const command = buildRepomixCommand(directoryPath, outputPath, options);
+    // Build the repomix command arguments
+    const { command, args } = buildRepomixCommandArgs(directoryPath, outputPath, options); // MODIFIED
 
     // Execute repomix
-    console.error(`Executing repomix: ${command}`); // Log command
-    const result = await executeCommand(command);
+    console.error(`Executing repomix: ${command} ${args.join(' ')}`); // Log command
+    const result = await executeCommand(command, args); // MODIFIED
     console.error(`Repomix stdout: ${result.stdout}`);
     console.error(`Repomix stderr: ${result.stderr}`);
 
@@ -65,8 +63,6 @@ export async function packDirectory(
     } catch (e) {
        throw new Error(`Repomix execution failed. Output file not found: ${outputPath}. Stderr: ${result.stderr}`);
     }
-
-    // TODO: Add parsing of repomix stdout for metrics if needed
 
     return { outputPath };
   } catch (error: any) {
@@ -78,47 +74,65 @@ export async function packDirectory(
   }
 }
 
-/** Build the repomix command string */
-function buildRepomixCommand(
+/** Build the repomix command and its arguments */
+function buildRepomixCommandArgs( // MODIFIED function name and return type
   directoryPath: string,
   outputPath: string,
   options: RepoPackOptions
-): string {
-  // Use npx to run repomix - assumes it's installed or available via npx
-  const args = ['npx', 'repomix'];
-  args.push(directoryPath); // Add directory path without quotes
-  args.push('--output', outputPath); // Specify output file without quotes
+): { command: string, args: string[] } {
+  const command = 'npx'; // The command to execute
+  const args: string[] = ['repomix']; // Initial arguments for npx
 
-  // Add custom options if provided (for power users)
+  // IMPORTANT: Path sanitization/validation should ideally happen before this point,
+  // or be very strictly applied here. For this example, we assume paths are safe.
+  args.push(directoryPath);
+  args.push('--output', outputPath);
+
+  // Add custom options if provided.
+  // SECURITY NOTE: `customOptions` is the riskiest part.
+  // If user-supplied, it MUST be heavily sanitized or, preferably,
+  // specific allowed options should be exposed rather than a raw string.
+  // For now, we split it, but this doesn't inherently make it safe if the options themselves are malicious.
   if (options.customOptions) {
-    // Split the custom options string by spaces and add each part to the args array
     const customOptionsParts = options.customOptions.trim().split(/\s+/);
     args.push(...customOptionsParts);
   }
 
-  // Repomix 0.3.3 doesn't support --exclude flag, so we'll omit it
-  // If we need to exclude patterns in the future, we'll need to check the version
-  // and use the appropriate flags
+  // Example: If you wanted to ensure only specific options are allowed from customOptions:
+  // const allowedCustomFlags = ['--some-safe-flag', '--another-allowed-one'];
+  // if (options.customOptions) {
+  //   const customOptionsParts = options.customOptions.trim().split(/\s+/);
+  //   customOptionsParts.forEach(part => {
+  //     if (allowedCustomFlags.includes(part.split('=')[0])) { // Basic check, might need more robust parsing
+  //       args.push(part);
+  //     } else {
+  //       console.warn(`[buildRepomixCommandArgs] Ignoring potentially unsafe custom option: ${part}`);
+  //     }
+  //   });
+  // }
 
-  // Add other options like --compress if needed and supported
+
+  // Repomix 0.3.3 doesn't support --exclude flag, so we'll omit it
+  // if (options.excludePatterns) {
+  //   args.push('--exclude', options.excludePatterns); // Check repomix docs for correct flag
+  // }
+
   // if (options.compress !== false) {
   //   args.push('--compress'); // Check repomix docs for correct compression flag
   // }
 
-  console.error(`[buildRepomixCommand] Command args: ${JSON.stringify(args)}`);
-  return args.join(' ');
+  console.error(`[buildRepomixCommandArgs] Command: ${command}, Args: ${JSON.stringify(args)}`);
+  return { command, args };
 }
 
-/** Execute a shell command */
-function executeCommand(command: string): Promise<{ stdout: string, stderr: string }> {
+/** Execute a shell command using execFile */
+function executeCommand(command: string, args: string[]): Promise<{ stdout: string, stderr: string }> { // MODIFIED
   return new Promise((resolve, reject) => {
-    // Increase buffer size if needed for large repomix output
-    exec(command, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(command, args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => { // MODIFIED: use execFile
       if (error) {
-        // Log the error details before rejecting
-        console.error(`Command execution failed: ${command}`);
-        console.error(`Error code: ${error.code}`);
-        console.error(`Signal received: ${error.signal}`);
+        console.error(`Command execution failed: ${command} ${args.join(' ')}`);
+        console.error(`Error code: ${(error as any).code}`); // Type assertion for code
+        console.error(`Signal received: ${(error as any).signal}`); // Type assertion for signal
         console.error(`Stderr: ${stderr}`);
         reject(new Error(`Command failed: ${error.message}. Stderr: ${stderr}`));
         return;
@@ -131,13 +145,11 @@ function executeCommand(command: string): Promise<{ stdout: string, stderr: stri
 /** Clean up temporary files */
 export async function cleanupPackedFile(outputPath: string): Promise<void> {
   try {
-     // Only delete if it looks like one of our temp files
      if (outputPath && outputPath.includes(os.tmpdir()) && outputPath.includes('repomix-')) {
        await fs.unlink(outputPath);
        console.error(`Deleted temporary file: ${outputPath}`);
      }
    } catch (error: any) {
-     // Log cleanup errors but don't fail the main operation
      console.error(`Error cleaning up packed file ${outputPath}: ${error.message}`);
    }
 }
